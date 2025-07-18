@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AQI Assistant Chatbot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .chatbot-container {
+            width: 95%; max-width: 1000px; height: 95vh;
+            background: white; border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        .chatbot-header {
+            background: linear-gradient(135deg, #4CAF50, #2E7D32);
+            color: white; padding: 20px; text-align: center; position: relative;
+        }
+        .chatbot-header h1 { font-size: 24px; }
+        .chatbot-header p { opacity: 0.9; font-size: 14px; }
+        .aqi-display {
+            background: rgba(255,255,255,0.1); padding: 10px;
+            border-radius: 10px; margin-top: 10px; display: none;
+        }
+        .aqi-value { font-size: 28px; font-weight: bold; }
+        .chat-messages {
+            flex: 1; padding: 20px; overflow-y: auto; background: #f8f9fa;
+        }
+        .message { margin-bottom: 15px; display: flex; align-items: flex-start; }
+        .message.user { justify-content: flex-end; }
+        .message-content {
+            max-width: 200%; padding: 12px 16px; border-radius: 18px; word-wrap: break-word;
+        }
+        .message.bot .message-content {
+            background: #e3f2fd; color: #1565c0; border-bottom-left-radius: 5px;
+        }
+        .message.user .message-content {
+            background: #4CAF50; color: white; border-bottom-right-radius: 5px;
+        }
+        .aqi-card {
+            background: white; border-radius: 10px; padding: 15px; margin: 10px 0;
+            border-left: 5px solid; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .aqi-good { border-left-color: #4CAF50; }
+        .aqi-moderate { border-left-color: #FFEB3B; }
+        .aqi-unhealthy-sensitive { border-left-color: #FF9800; }
+        .aqi-unhealthy { border-left-color: #F44336; }
+        .aqi-very-unhealthy { border-left-color: #9C27B0; }
+        .aqi-hazardous { border-left-color: #795548; }
+        .recommendation-list { list-style: none; padding: 0; }
+        .recommendation-list li {
+            padding: 8px 0; border-bottom: 1px solid #eee;
+        }
+        .recommendation-list li:before {
+            content: "• "; color: #4CAF50; font-weight: bold;
+        }
+        .input-container {
+            padding: 20px; background: white; border-top: 1px solid #ddd;
+            display: flex; gap: 10px;
+        }
+        .chat-input {
+            flex: 1; padding: 12px 16px; border: 2px solid #ddd; border-radius: 25px;
+            outline: none; font-size: 75%; transition: border-color 0.3s;
+        }
+        .chat-input:focus { border-color: #4CAF50; }
+        .send-button {
+            padding: 12px 20px; background: #4CAF50; color: white; border: none;
+            border-radius: 25px; cursor: pointer; font-size: 16px; transition: background 0.3s;
+        }
+        .send-button:hover { background: #45a049; }
+        .quick-actions {
+            display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;
+        }
+        .quick-action {
+            padding: 8px 16px; background: #e8f5e8; color: #2e7d32; border: none;
+            border-radius: 20px; cursor: pointer; font-size: 14px; transition: all 0.3s;
+        }
+        .quick-action:hover { background: #4CAF50; color: white; }
+        .typing-indicator { display: none; padding: 10px; font-style: italic; color: #666; }
+        .location-input {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3);
+            color: white; padding: 8px 12px; border-radius: 20px; margin: 10px 0; width: 200px;
+        }
+        .location-input::placeholder { color: rgba(255,255,255,0.7); }
+        .alert-banner {
+            background: #ff5722; color: white; padding: 10px; text-align: center;
+            display: none; animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="chatbot-container">
+        <!-- Sound element (hidden) -->
+        <audio id="highAqiSound" preload="auto">
+            <source src="beep-beep-beep-beep-80262.mp3" type="audio/mpeg">
+        </audio>
+        <div class="alert-banner" id="alertBanner">
+            ⚠️ High pollution alert! Take necessary precautions.
+        </div>
+        <div class="chatbot-header">
+            <h1>🌬️ AQI Assistant</h1>
+            <p>Your personal air quality advisor</p>
+            <input type="text" class="location-input" id="locationInput" placeholder="Enter your location" onchange="updateLocation()">
+            <div class="aqi-display" id="aqiDisplay">
+                <div>Current AQI: <span class="aqi-value" id="aqiValue">--</span></div>
+                <div id="aqiLevel">Waiting for data...</div>
+            </div>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="message bot">
+                <div class="message-content">
+                    <strong>Welcome to AQI Assistant! 🌱</strong><br><br>
+                    <br><br>Ask me about:
+                    <ul class="recommendation-list">
+                        <li>Should I go for outdoor activities today?</li>
+                        <li>What precautions should I take?</li>
+                        <li>What is AQI?</li>
+                        <li>What are AQI factors?</li>
+                        <li>What is ozone?</li>
+                        <li>How to protect myself indoors?</li>
+                        <li>Health effects of poor air?</li>
+                        <li>Can plants help AQI?</li>
+                        <li>You can also directly enter an AQI value!</li>
+                    </ul>
+                    <br>Please enter your location above to get started!
+                </div>
+            </div>
+            <div class="quick-actions">
+                <button class="quick-action" onclick="sendQuickMessage('Should I exercise outdoors today?')">Exercise Today?</button>
+                <button class="quick-action" onclick="sendQuickMessage('Is it safe for children outside?')">Kids Safety</button>
+                <button class="quick-action" onclick="sendQuickMessage('I have asthma, is it safe?')">Asthma Safety</button>
+                <button class="quick-action" onclick="sendQuickMessage('Pregnant woman precautions')">Pregnancy Safety</button>
+                <button class="quick-action" onclick="sendQuickMessage('Elderly safety guidelines')">Elderly Safety</button>
+                <button class="quick-action" onclick="sendQuickMessage('What is AQI?')">What is AQI?</button>
+                <button class="quick-action" onclick="sendQuickMessage('AQI factors')">AQI Factors</button>
+                <button class="quick-action" onclick="sendQuickMessage('Health effects of poor air quality')">Health Effects</button>
+                <button class="quick-action" onclick="sendQuickMessage('How to protect myself indoors?')">Indoor Protection</button>
+                <button class="quick-action" onclick="sendQuickMessage('Can plants improve AQI?')">Plants & AQI</button>
+                <button class="quick-action" onclick="sendQuickMessage('What is ozone?')">What is ozone?</button>
+                <button class="quick-action" onclick="sendQuickMessage('AQI is 200')">Set AQI to 200</button>
+            </div>
+        </div>
+        <div class="typing-indicator" id="typingIndicator">
+            AQI Assistant is typing...
+        </div>
+        <div class="input-container">
+            <input type="text" class="chat-input" id="chatInput" placeholder="Ask me about air quality safety or enter AQI value..." onkeypress="handleKeyPress(event)">
+            <button class="send-button" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+    <script>
+        // FAQ Knowledge Base
+        const faqKnowledgeBase = {
+            "what is aqi": "AQI stands for <b>Air Quality Index</b>. It's a number used by government agencies to communicate how polluted the air currently is or how polluted it is forecast to become. The higher the AQI, the greater the health concern.",
+            "how is aqi calculated": "AQI is calculated using measurements of key air pollutants: <b>PM2.5</b>, <b>PM10</b>, <b>Ozone (O3)</b>, <b>Nitrogen Dioxide (NO2)</b>, <b>Sulfur Dioxide (SO2)</b>, and <b>Carbon Monoxide (CO)</b>. Each pollutant's concentration is converted to a number on the AQI scale and the highest is reported as the AQI.",
+            "aqi factors": "Main factors affecting AQI include: <ul><li>Particulate Matter (PM2.5, PM10)</li><li>Ozone (O3)</li><li>Nitrogen Dioxide (NO2)</li><li>Sulfur Dioxide (SO2)</li><li>Carbon Monoxide (CO)</li></ul>Weather, traffic, and industrial activities also play a big role.",
+            "aqi levels": "<b>AQI Levels:</b><ul><li>0–50: Good</li><li>51–100: Moderate</li><li>101–150: Unhealthy for Sensitive Groups</li><li>151–200: Unhealthy</li><li>201–300: Very Unhealthy</li><li>301–500: Hazardous</li></ul>",
+            "why is air quality important": "Good air quality is crucial for our health. Poor air can cause respiratory issues, aggravate asthma, increase risk of heart disease, and affect children and elderly more severely.",
+            "how to improve air quality": "<ul><li>Reduce vehicle use</li><li>Avoid burning trash</li><li>Use public transport</li><li>Plant trees</li><li>Use air purifiers indoors</li></ul>",
+            "pm2.5": "<b>PM2.5</b> refers to fine inhalable particles, with diameters generally 2.5 micrometers and smaller. They can penetrate deep into the lungs and cause health problems.",
+            "pm10": "<b>PM10</b> refers to inhalable particles, with diameters generally 10 micrometers and smaller. Exposure can lead to respiratory and cardiovascular issues.",
+            "what are the health effects of poor air": "<ul><li>Short-term: Cough, throat irritation, chest pain, shortness of breath, eye irritation</li><li>Long-term: Asthma, chronic bronchitis, increased risk of heart attack/stroke, lower lung development in children, some cancers</li></ul>People with pre-existing conditions, children, elderly, and pregnant women are most at risk.",
+            "health effects of poor air": "See above: <ul><li>Short-term: Cough, throat irritation, chest pain, shortness of breath, eye irritation</li><li>Long-term: Asthma, chronic bronchitis, heart attack, stroke, lower lung growth in children, some cancers</li></ul>",
+            "can plants improve aqi": "Certain indoor plants (like <b>Snake Plant, Peace Lily, Spider Plant, and Aloe Vera</b>) can help reduce indoor air pollution by absorbing some toxins, but they can't replace proper ventilation and air filtration for removing all harmful pollutants.",
+            "plants and aqi": "Plants can help reduce some indoor pollutants but aren't enough for severe AQI events. Use them along with ventilation and air purifiers.",
+            "how to protect myself indoors": "<ul><li>Keep doors and windows closed when AQI is bad</li><li>Use HEPA air purifiers if possible</li><li>Avoid indoor smoking/candles</li><li>Wipe surfaces to remove dust</li><li>Monitor AQI regularly</li></ul>",
+            "indoor protection": "To protect indoors: keep doors/windows closed, use air purifiers, avoid burning incense/candles, and wipe surfaces to remove dust.",
+            "what is ozone": "Ozone (O3) is a gas found both at ground level and in the upper atmosphere. At ground level, ozone is a harmful air pollutant and a main component of urban smog. It can cause respiratory irritation and worsen asthma.",
+            "what is carbon monoxide": "Carbon monoxide (CO) is a colorless, odorless gas that is harmful when inhaled. It comes from burning fossil fuels. High exposure can be fatal.",
+            "what is nitrogen dioxide": "Nitrogen dioxide (NO2) is a reddish-brown gas with a sharp odor, produced mainly from vehicle exhaust and industry. It irritates the lungs and lowers immunity to lung infections."
+        };
+
+        function checkFAQIntent(text) {
+            const normalized = text.trim().toLowerCase();
+            for (const key in faqKnowledgeBase) {
+                if (normalized.includes(key)) return key;
+            }
+            return null;
+        }
+
+        function extractAQIValue(message) {
+            const match = message.match(/\b([1-4]?[0-9]{1,2}|500)\b/);
+            if (match) {
+                const num = parseInt(match[1], 10);
+                if (
+                    message.toLowerCase().includes("aqi") ||
+                    message.trim() === match[1]
+                ) {
+                    if (num >= 1 && num <= 500) return num;
+                }
+            }
+            return null;
+        }
+
+        let currentAQI = null;
+        let currentLocation = null;
+        let currentLevel = null;
+
+        const aqiKnowledgeBase = {
+            levels: {
+                good: { range: [0, 50], color: '#4CAF50', class: 'aqi-good', name: 'Good' },
+                moderate: { range: [51, 100], color: '#FFEB3B', class: 'aqi-moderate', name: 'Moderate' },
+                unhealthySensitive: { range: [101, 150], color: '#FF9800', class: 'aqi-unhealthy-sensitive', name: 'Unhealthy for Sensitive Groups' },
+                unhealthy: { range: [151, 200], color: '#F44336', class: 'aqi-unhealthy', name: 'Unhealthy' },
+                veryUnhealthy: { range: [201, 300], color: '#9C27B0', class: 'aqi-very-unhealthy', name: 'Very Unhealthy' },
+                hazardous: { range: [301, 500], color: '#795548', class: 'aqi-hazardous', name: 'Hazardous' }
+            },
+            recommendations: {
+                good: {
+        general: "Air quality is excellent! Perfect day for all outdoor activities.",
+        exercise: "Great day for all outdoor exercises including running, cycling, and sports.",
+        children: "Children can safely play outside for extended periods.",
+        sensitive: "No restrictions for people with respiratory conditions.",
+        asthma: "Perfect conditions for asthma patients. All outdoor activities are safe.",
+        pregnant: "Excellent air quality - safe for pregnant women to exercise and spend time outdoors.",
+        elderly: "Great conditions for elderly people to enjoy outdoor walks and activities.",
+        timing: "All times of day are suitable for outdoor activities.",
+        precautions: "No special precautions needed. Enjoy the fresh air!"
+    },
+    moderate: {
+        general: "Air quality is acceptable for most people.",
+        exercise: "Outdoor exercise is fine for healthy individuals. Light activities recommended for sensitive people.",
+        children: "Children can play outside normally, but watch for any symptoms in sensitive kids.",
+        sensitive: "People with respiratory conditions should consider reducing prolonged outdoor activities.",
+        asthma: "Monitor symptoms closely. Keep rescue inhalers handy. Consider shorter outdoor periods.",
+        pregnant: "Generally safe, but pregnant women with respiratory issues should limit strenuous outdoor activities.",
+        elderly: "Safe for most elderly, but those with heart/lung conditions should take frequent breaks.",
+        timing: "Morning and evening hours are preferable for sensitive individuals.",
+        precautions: "Sensitive individuals may want to keep rescue medications handy."
+    },
+    unhealthySensitive: {
+        general: "Unhealthy for sensitive groups including children, elderly, and people with heart/lung conditions.",
+        exercise: "Reduce outdoor exercise intensity and duration. Consider indoor alternatives.",
+        children: "Limit children's outdoor playtime, especially for those with asthma or allergies.",
+        sensitive: "Stay indoors or wear masks when outside. Limit outdoor exposure.",
+        asthma: "HIGH RISK: Stay indoors. If you must go out, wear N95 masks and carry rescue inhalers. Avoid physical exertion.",
+        pregnant: "CAUTION: Limit outdoor exposure. Pollution can affect fetal development. Use air purifiers indoors.",
+        elderly: "HIGH RISK: Stay indoors, especially those with heart disease, COPD, or diabetes. Use air purifiers.",
+        timing: "If you must go outside, avoid morning and evening rush hours when pollution peaks.",
+        precautions: "Wear N95 masks outdoors, use air purifiers indoors, keep windows closed."
+    },
+    unhealthy: {
+        general: "Everyone should limit outdoor activities and take precautions.",
+        exercise: "Avoid outdoor exercise. Choose indoor alternatives like gym or home workouts.",
+        children: "Keep children indoors. If they must go out, limit time and ensure they wear masks.",
+        sensitive: "Sensitive individuals should stay indoors and use air purifiers if available.",
+        asthma: "EMERGENCY LEVEL: Do not go outside. Close all windows. Use air purifiers and nebulizers as needed.",
+        pregnant: "URGENT: Stay indoors completely. High pollution can cause pregnancy complications and affect baby's health.",
+        elderly: "EMERGENCY: Especially dangerous for elderly. Stay indoors, monitor health, seek medical help if breathing problems occur.",
+        timing: "Minimize outdoor time. If necessary, brief trips during midday might be slightly better.",
+        precautions: "N95 masks essential outdoors, air purifiers indoors, avoid opening windows."
+    },
+    veryUnhealthy: {
+        general: "Health alert! Everyone should avoid outdoor activities.",
+        exercise: "No outdoor exercise. Stay indoors and use indoor workout options.",
+        children: "Keep children indoors at all times. Schools may cancel outdoor activities.",
+        sensitive: "Emergency conditions for sensitive groups. Stay indoors with air purification.",
+        asthma: "CRITICAL: Medical emergency level. Have medications ready, consider hospital if symptoms worsen.",
+        pregnant: "CRITICAL: Can cause serious harm to mother and baby. Complete indoor isolation recommended.",
+        elderly: "LIFE-THREATENING: Extremely dangerous. Monitor vital signs, have emergency contacts ready.",
+        timing: "Avoid going outside. Only essential trips with full protection.",
+        precautions: "N95 masks mandatory outdoors, seal windows, use air purifiers, avoid physical exertion outdoors."
+    },
+    hazardous: {
+        general: "Emergency conditions! Avoid all outdoor activities.",
+        exercise: "Absolutely no outdoor activities. Indoor rest is recommended.",
+        children: "Emergency - keep children indoors. Consider evacuation if conditions persist.",
+        sensitive: "Health emergency for all groups. Stay indoors with maximum air filtration.",
+        asthma: "LIFE-THREATENING: Seek immediate medical attention if any breathing difficulty. Have emergency plan ready.",
+        pregnant: "EXTREME DANGER: Can cause miscarriage, premature birth, birth defects. Seek medical guidance immediately.",
+        elderly: "EXTREME EMERGENCY: This level can be fatal. Stay indoors, monitor health constantly, have medical support ready.",
+        timing: "Do not go outside unless absolutely essential for emergency.",
+        precautions: "N95/P100 masks essential, seal all windows, maximum air purification, consider temporary relocation."
+    }
+            }
+        };
+
+        function playHighAQISound() {
+            const audio = document.getElementById('highAqiSound');
+            if (audio) {
+                audio.currentTime = 0;
+                audio.play();
+            }
+        }
+
+        function updateAQI(aqiValue, location = null) {
+            currentAQI = aqiValue;
+            currentLocation = location;
+            currentLevel = getAQILevel(aqiValue);
+
+            document.getElementById('aqiValue').textContent = aqiValue;
+            document.getElementById('aqiLevel').textContent = aqiKnowledgeBase.levels[currentLevel].name;
+            document.getElementById('aqiDisplay').style.display = 'block';
+
+            if (location) {
+                document.getElementById('locationInput').value = location;
+            }
+            if (aqiValue > 150) {
+                document.getElementById('alertBanner').style.display = 'block';
+                playHighAQISound();
+            } else {
+                document.getElementById('alertBanner').style.display = 'none';
+            }
+            addMessage(`Current AQI for ${location || 'your location'} is ${aqiValue} (${aqiKnowledgeBase.levels[currentLevel].name}). How can I help you stay safe today?`);
+        }
+
+        function getAQILevel(value) {
+            if (value <= 50) return 'good';
+            if (value <= 100) return 'moderate';
+            if (value <= 150) return 'unhealthySensitive';
+            if (value <= 200) return 'unhealthy';
+            if (value <= 300) return 'veryUnhealthy';
+            return 'hazardous';
+        }
+
+        function classifyIntent(text) {
+            const lowerText = text.toLowerCase();
+            if (lowerText.match(/(asthma|inhaler|wheez|breathing problem|respiratory)/)) return 'asthma';
+            if (lowerText.match(/(pregnan|expecting|baby|fetal|fetus|maternity)/)) return 'pregnant';
+            if (lowerText.match(/(elderly|senior|old|aged|grandparent|retirement)/)) return 'elderly';
+            if (lowerText.match(/(exercise|workout|run|jog|gym|sport|bike|cycling|walk)/)) return 'exercise';
+            if (lowerText.match(/(child|kid|baby|school|playground)/)) return 'children';
+            if (lowerText.match(/(time|when|hour|morning|evening|best time)/)) return 'timing';
+            if (lowerText.match(/(precaution|safe|protect|mask|avoid)/)) return 'precautions';
+            if (lowerText.match(/(sensitive|heart|lung|copd|diabetes|immune)/)) return 'sensitive';
+            if (lowerText.match(/(outdoor|outside|fresh air|park|garden)/)) return 'outdoor';
+            return 'general';
+        }
+
+        function generateResponse(userMessage) {
+            const aqiInput = extractAQIValue(userMessage);
+            if (aqiInput !== null) {
+                updateAQI(aqiInput, currentLocation || "user-specified location");
+                return {
+                    text: `<div class="aqi-card aqi-${getAQILevel(aqiInput)}">
+                        AQI has been set to <b>${aqiInput}</b>.<br>
+                        Here are recommendations for this air quality level.<br>
+                        Ask any question or enter a new location or AQI anytime!
+                    </div>`,
+                    type: 'aqi-update'
+                };
+            }
+
+            const faqKey = checkFAQIntent(userMessage);
+            if (faqKey) {
+                return {
+                    text: `<div class="aqi-card">${faqKnowledgeBase[faqKey]}</div>`,
+                    type: 'faq'
+                };
+            }
+
+            if (!currentAQI) {
+                return {
+                    text: "I need your current AQI data to provide personalized recommendations. Please make sure your location's AQI has been calculated and updated, or simply enter the AQI value here.",
+                    type: 'error'
+                };
+            }
+
+            const intent = classifyIntent(userMessage);
+            const level = currentLevel;
+            const rec = aqiKnowledgeBase.recommendations[level];
+            const levelInfo = aqiKnowledgeBase.levels[level];
+
+            let response = `<div class="aqi-card ${levelInfo.class}">
+                <strong>Current AQI: ${currentAQI} (${levelInfo.name})</strong><br><br>`;
+
+            switch (intent) {
+                case 'asthma':
+                    response += `<strong>🫁 For Asthma Patients:</strong><br>${rec.asthma}<br><br>`;
+                    response += `<strong>⚠️ Critical Reminders:</strong>
+                    <ul class="recommendation-list">
+                    <li>Always carry your rescue inhaler</li>
+                    <li>Monitor peak flow readings if you have a meter</li>
+                    <li>Know your asthma action plan</li>
+                    <li>Contact doctor if symptoms worsen</li>
+                    </ul>`;
+                    break;
+                case 'pregnant':
+                    response += `<strong>🤱 For Pregnant Women:</strong><br>${rec.pregnant}<br><br>`;
+                    response += `<strong>🍼 Important for Baby's Health:</strong>
+                    <ul class="recommendation-list">
+                    <li>Air pollution can affect fetal brain development</li>
+                    <li>May increase risk of preterm birth</li>
+                    <li>Can cause low birth weight</li>
+                    <li>Consult your OB-GYN if you must be outdoors frequently</li>
+                    </ul>`;
+                    break;
+                case 'elderly':
+                    response += `<strong>👴 For Elderly People:</strong><br>${rec.elderly}<br><br>`;
+                    response += `<strong>💊 Health Monitoring:</strong>
+                    <ul class="recommendation-list">
+                    <li>Monitor blood pressure regularly</li>
+                    <li>Watch for chest pain or shortness of breath</li>
+                    <li>Keep emergency medications accessible</li>
+                    <li>Have emergency contacts readily available</li>
+                    </ul>`;
+                    break;
+                case 'exercise':
+                    response += `<strong>🏃‍♂️ Exercise Recommendation:</strong><br>${rec.exercise}<br><br>`;
+                    if (level !== 'good') {
+                        response += `<strong>💡 Suggestion:</strong> Consider indoor alternatives like home workouts, yoga, or gym sessions.`;
+                    }
+                    break;
+                case 'children':
+                    response += `<strong>👶 Children's Safety:</strong><br>${rec.children}<br><br>`;
+                    if (currentAQI > 100) {
+                        response += `<strong>⚠️ Important:</strong> Children are more vulnerable to air pollution. Keep rescue medications handy if they have respiratory conditions.`;
+                    }
+                    break;
+                case 'timing':
+                    response += `<strong>⏰ Best Timing:</strong><br>${rec.timing}<br><br>`;
+                    response += `<strong>Pro Tip:</strong> Air quality typically varies throughout the day. Check real-time updates before heading out.`;
+                    break;
+                case 'precautions':
+                    response += `<strong>🛡️ Safety Precautions:</strong><br>${rec.precautions}<br><br>`;
+                    if (currentAQI > 150) {
+                        response += `<strong>Emergency Level:</strong> This is not a normal day - please take these precautions seriously.`;
+                    }
+                    break;
+                case 'sensitive':
+                    response += `<strong>🫁 For Sensitive Individuals:</strong><br>${rec.sensitive}<br><br>`;
+                    response += `<strong>Note:</strong> People with asthma, heart disease, or elderly should be extra cautious and consult healthcare providers if symptoms worsen.`;
+                    break;
+                case 'outdoor':
+                    response += `<strong>🌳 Outdoor Activities:</strong><br>${rec.general}<br><br>`;
+                    response += `<strong>Exercise Guidelines:</strong> ${rec.exercise}`;
+                    break;
+                default:
+                    response += `<strong>📋 General Advice:</strong><br>${rec.general}<br><br>`;
+                    response += `<strong>Key Recommendations:</strong>
+                    <ul class="recommendation-list">
+                    <li>Exercise: ${rec.exercise}</li>
+                    <li>Children: ${rec.children}</li>
+                    <li>Precautions: ${rec.precautions}</li>
+                    </ul>`;
+                    break;
+            }
+            response += `</div>`;
+            return { text: response, type: 'recommendation' };
+        }
+
+        function addMessage(content, isUser = false) {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.innerHTML = content;
+            messageDiv.appendChild(contentDiv);
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function showTyping() {
+            document.getElementById('typingIndicator').style.display = 'block';
+        }
+        function hideTyping() {
+            document.getElementById('typingIndicator').style.display = 'none';
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (message) {
+                addMessage(message, true);
+                input.value = '';
+                showTyping();
+                setTimeout(() => {
+                    hideTyping();
+                    const response = generateResponse(message);
+                    addMessage(response.text);
+                }, 1000 + Math.random() * 1000);
+            }
+        }
+
+        function sendQuickMessage(message) {
+            addMessage(message, true);
+            showTyping();
+            setTimeout(() => {
+                hideTyping();
+                const response = generateResponse(message);
+                addMessage(response.text);
+            }, 800);
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function updateLocation() {
+            const location = document.getElementById('locationInput').value;
+            if (location) {
+                currentLocation = location;
+                addMessage(`Location updated to: ${location}. Fetching AQI data...`);
+                fetchAQI(location);
+            }
+        }
+
+        function fetchAQI(location) {
+            const token = 'b2729108a27e4af10cbf924c0ff6abc756beb8d4'; // <-- Replace this with your actual WAQI API token
+            const url = `https://api.waqi.info/feed/${encodeURIComponent(location)}/?token=${token}`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'ok' && data.data && data.data.aqi) {
+                        const aqi = data.data.aqi;
+                        updateAQI(aqi, location);
+                    } else {
+                        addMessage("❗ Could not fetch AQI data for this location. Please check the city name or try later.");
+                    }
+                })
+                .catch(err => {
+                    addMessage("❗ Error fetching AQI data. Please try again later.");
+                });
+        }
+
+        document.getElementById('chatInput').focus();
+    </script>
+</body>
+</html>
